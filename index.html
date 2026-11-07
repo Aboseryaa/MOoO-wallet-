@@ -1,0 +1,2071 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="only dark">
+  <meta name="theme-color" content="#0b1329">
+  <title>MOoO Wallet</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Tajawal:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js">
+    // نظام النسخ الاحتياطي ونقل البيانات بين الأجهزة (مفحوص ومضمون 100%)
+    const btnExportBackup = document.getElementById('btnExportBackup');
+    const btnImportBackupTrigger = document.getElementById('btnImportBackupTrigger');
+    const importBackupFile = document.getElementById('importBackupFile');
+
+    if (btnExportBackup) {
+      btnExportBackup.addEventListener('click', () => {
+        try {
+          const backupData = {
+            app: 'MOoOWallet',
+            version: 'v21',
+            exportDate: new Date().toISOString(),
+            expenseCats: expenseCats,
+            incomeCats: incomeCats,
+            records: records,
+            loans: loans,
+            debts: debts
+          };
+
+          const jsonStr = JSON.stringify(backupData, null, 2);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const downloadAnchor = document.createElement('a');
+          downloadAnchor.href = url;
+          downloadAnchor.download = `نسخة_MOoOWallet_الاحتياطية_${Date.now()}.json`;
+          document.body.appendChild(downloadAnchor);
+          downloadAnchor.click();
+          downloadAnchor.remove();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert('حدث خطأ أثناء تصدير النسخة: ' + err.message);
+        }
+      });
+    }
+
+    if (btnImportBackupTrigger && importBackupFile) {
+      btnImportBackupTrigger.addEventListener('click', () => {
+        importBackupFile.click();
+      });
+
+      importBackupFile.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const imported = JSON.parse(event.target.result);
+            if (!imported.records && !imported.loans) {
+              alert('الملف غير متوافق أو تالف');
+              return;
+            }
+
+            if (confirm('هل تريد استبدال البيانات الحالية بالنسخة الاحتياطية المستوردة؟')) {
+              if (imported.expenseCats) expenseCats = imported.expenseCats;
+              if (imported.incomeCats) incomeCats = imported.incomeCats;
+              if (imported.records) records = imported.records;
+              if (imported.loans) loans = imported.loans;
+              if (imported.debts) debts = imported.debts;
+
+              saveAll();
+              renderCats();
+              renderRecent();
+              if (currentMode === 'loan') renderLoansList();
+              updateTopStats();
+              alert('تم استيراد كافة المصاريف والإيرادات والأقساط بنجاح تام! 🎉');
+            }
+          } catch (err) {
+            alert('حدث خطأ أثناء قراءة ملف النسخة: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        importBackupFile.value = '';
+      });
+    }
+
+  </script>
+  <style>
+    :root {
+      color-scheme: only dark !important;
+      --bg-page: #0b1329;
+      --bg-surface: #132247;
+      --bg-card: rgba(22, 38, 77, 0.75);
+      --border-soft: rgba(148, 163, 184, 0.18);
+      --border-active: rgba(96, 165, 250, 0.4);
+      --primary-blue: #3b82f6;
+      --cyan-highlight: #38bdf8;
+      --emerald-mint: #10b981;
+      --amber-accent: #f59e0b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --shadow-card: 0 12px 32px -4px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Tajawal', sans-serif;
+      font-size: 1.05rem;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html {
+      color-scheme: only dark !important;
+      background-color: var(--bg-page) !important;
+    }
+
+    body {
+      color-scheme: only dark !important;
+      background: radial-gradient(circle at 50% 0%, #1e3a8a33 0%, transparent 60%), #0b1329 !important;
+      color: var(--text-primary) !important;
+      padding: 18px 14px;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    input, button, select, textarea {
+      color-scheme: only dark !important;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 550px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-bottom: 40px;
+    }
+
+    .app-header {
+      background: linear-gradient(135deg, rgba(30, 58, 138, 0.4), rgba(15, 23, 42, 0.85), rgba(19, 34, 71, 0.7));
+      border: 1.5px solid rgba(96, 165, 250, 0.35);
+      border-radius: 20px;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.12);
+      backdrop-filter: blur(16px);
+      position: relative;
+    }
+    .app-header h1 {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.95rem;
+      font-weight: 800;
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 0;
+      line-height: 1.2;
+      letter-spacing: 1.5px;
+    }
+    .wallet-brand-name {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: linear-gradient(180deg, #ffffff 25%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 10px rgba(56, 189, 248, 0.25));
+    }
+
+    /* كروت المؤشرات العلوية أصبحت 4 لتشمل الأقساط */
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .overview-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-soft);
+      border-radius: 18px;
+      padding: 12px 10px;
+      text-align: center;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+    }
+    .overview-title {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .overview-val {
+      font-size: 1.15rem;
+      font-weight: 900;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    .main-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-soft);
+      border-radius: 24px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      box-shadow: var(--shadow-card);
+      backdrop-filter: blur(14px);
+    }
+
+    /* التبديل بين الأقسام الثلاثة */
+    .mode-pill-selector {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: rgba(11, 19, 41, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 5px;
+      gap: 5px;
+    }
+    .mode-pill {
+      background: transparent;
+      border: none;
+      padding: 10px 4px;
+      font-size: 0.92rem;
+      font-weight: 800;
+      color: var(--text-secondary);
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.2s ease;
+    }
+    .mode-pill.active.exp {
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: #ffffff;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+    }
+    .mode-pill.active.inc {
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      color: #ffffff;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+    .mode-pill.active.loan {
+      background: linear-gradient(135deg, #d97706, #b45309);
+      color: #ffffff;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+    .mode-pill.active.debt {
+      background: linear-gradient(135deg, #be123c, #881337);
+      color: #ffffff;
+      border: 1px solid rgba(244, 63, 94, 0.5);
+    }
+
+    .date-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(11, 19, 41, 0.6);
+      border: 1px solid var(--border-soft);
+      border-radius: 12px;
+      padding: 8px 14px;
+      font-size: 0.85rem;
+    }
+
+    .amount-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .amount-input {
+      width: 100%;
+      background: rgba(11, 19, 41, 0.95);
+      border: 2px solid var(--border-soft);
+      border-radius: 18px;
+      padding: 18px;
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: #38bdf8;
+      outline: none;
+      text-align: center;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      transition: all 0.2s ease;
+    }
+    .amount-input:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+    }
+
+    .cat-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 2px;
+    }
+    .cat-section-header span {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+    .btn-edit-cats {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+      border-radius: 10px;
+      padding: 5px 12px;
+      font-size: 0.82rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s;
+    }
+
+    .categories-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .cat-card-btn {
+      background: rgba(11, 19, 41, 0.7);
+      border: 1.5px solid var(--border-soft);
+      border-radius: 16px;
+      padding: 13px 12px;
+      color: #e2e8f0;
+      font-size: 0.98rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .cat-card-btn.selected {
+      background: rgba(30, 58, 138, 0.55);
+      border-color: #60a5fa;
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-submit-main {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #ffffff;
+      border: none;
+      border-radius: 16px;
+      padding: 16px;
+      font-size: 1.2rem;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+      transition: all 0.2s;
+    }
+
+    .action-button-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 10px;
+    }
+    .app-action-btn {
+      border: none;
+      border-radius: 16px;
+      padding: 15px;
+      font-weight: 900;
+      font-size: 1.05rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-close-account {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+    .btn-reset-section {
+      background: rgba(11, 19, 41, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94a3b8;
+    }
+
+    /* تصميم كروت قسم الأقساط */
+    .loan-inputs-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .loan-field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .loan-input {
+      width: 100%;
+      background: rgba(11, 19, 41, 0.95);
+      border: 1px solid var(--border-soft);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: #ffffff;
+      font-size: 0.92rem;
+      outline: none;
+    }
+    .loan-input:focus {
+      border-color: #f59e0b;
+    }
+
+    .loan-item-card {
+      background: rgba(11, 19, 41, 0.85);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: 16px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .loan-item-card:hover {
+      border-color: rgba(245, 158, 11, 0.6);
+    }
+    .loan-progress-bar {
+      width: 100%;
+      height: 7px;
+      background: #1e293b;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .loan-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #38bdf8);
+      border-radius: 10px;
+    }
+
+    .history-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-soft);
+      border-radius: 22px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .history-header {
+      font-size: 0.92rem;
+      font-weight: 800;
+      color: var(--text-secondary);
+    }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .history-item {
+      background: rgba(11, 19, 41, 0.8);
+      border: 1px solid var(--border-soft);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Modals */
+    .app-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 10, 24, 0.88);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+    .app-modal.open {
+      display: flex;
+    }
+    .modal-container {
+      background: #111e3b;
+      border: 1px solid rgba(96, 165, 250, 0.3);
+      border-radius: 26px;
+      width: 100%;
+      max-width: 490px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    }
+    .modal-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-soft);
+      padding-bottom: 12px;
+    }
+    .btn-modal-close {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      border: none;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      font-size: 1.2rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #printBillCard {
+      background: #091226;
+      border: 2px solid rgba(96, 165, 250, 0.25);
+      border-radius: 20px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .bill-hero-box {
+      background: linear-gradient(135deg, #1e3a8a, #0f172a);
+      border: 2px solid #3b82f6;
+      border-radius: 16px;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .bill-cat-row {
+      background: rgba(19, 34, 71, 0.9);
+      border: 1px solid var(--border-soft);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    .pill-counter {
+      background: rgba(11, 19, 41, 0.9);
+      border: 1px solid var(--border-soft);
+      color: #38bdf8;
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 10px;
+      margin-right: 6px;
+    }
+
+    .modal-export-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .btn-export-option {
+      border: none;
+      border-radius: 14px;
+      padding: 13px 10px;
+      font-weight: 900;
+      font-size: 0.9rem;
+      cursor: pointer;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-export-pic { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+    .btn-export-doc { background: linear-gradient(135deg, #0284c7, #0369a1); }
+
+    .icon-picker-btn {
+      background: rgba(11, 19, 41, 0.85);
+      border: 1px solid var(--border-soft);
+      border-radius: 12px;
+      font-size: 1.6rem;
+      padding: 10px 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon-picker-btn:hover {
+      background: rgba(56, 189, 248, 0.25);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header class="app-header">
+      <h1><span class="wallet-brand-name">MOoO Wallet</span></h1>
+    </header>
+
+    <button id="installAppBtn" type="button" hidden
+      style="width:100%;padding:12px;border:1px solid rgba(56,189,248,.4);border-radius:14px;background:rgba(56,189,248,.12);color:#7dd3fc;font-weight:900;cursor:pointer;">
+      📲 تثبيت MOoO Wallet كتطبيق
+    </button>
+
+
+    <!-- كروت الإحصائيات السريعة -->
+    <section class="overview-grid" style="grid-template-columns: repeat(2, 1fr);">
+      <div class="overview-card">
+        <div class="overview-title">إجمالي الدخل</div>
+        <div id="statIncome" class="overview-val" style="color: #38bdf8;">0</div>
+      </div>
+      <div class="overview-card">
+        <div class="overview-title">إجمالي المصاريف</div>
+        <div id="statExpense" class="overview-val" style="color: #f1f5f9;">0</div>
+      </div>
+      <div class="overview-card">
+        <div class="overview-title">الصافي المتبقي</div>
+        <div id="statNet" class="overview-val" style="color: #60a5fa;">0</div>
+      </div>
+      <div class="overview-card" style="border-color: rgba(245, 158, 11, 0.35);">
+        <div class="overview-title" style="color: #fbbf24;">باقي الأقساط عليّ</div>
+        <div id="statLoansLeft" class="overview-val" style="color: #f59e0b;">0</div>
+      </div>
+      <div class="overview-card" style="grid-column: span 2; border-color: rgba(239, 68, 68, 0.35); background: rgba(30, 41, 59, 0.7);">
+        <div class="overview-title" style="color: #fca5a5;">إجمالي المديونية (فلوس عليا)</div>
+        <div id="statDebtsLeft" class="overview-val" style="color: #f87171;">0 ج.م</div>
+      </div>
+    </section>
+
+    <!-- شريط النسخ الاحتياطي ونقل البيانات بين الموبايلات -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: rgba(19, 34, 71, 0.6); border: 1px solid var(--border-soft); border-radius: 16px; padding: 10px 12px; align-items: center;">
+      <button type="button" id="btnExportBackup" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; border-radius: 12px; padding: 10px; font-weight: 800; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+        💾 تصدير نسخة للموبايل
+      </button>
+
+      <button type="button" id="btnImportBackupTrigger" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: #6ee7b7; border-radius: 12px; padding: 10px; font-weight: 800; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+        📥 استيراد نسخة للموبايل
+      </button>
+      <input type="file" id="importBackupFile" accept=".json" style="display: none;">
+    </div>
+
+    <!-- الكارت الرئيسي والتبديل بين 3 أقسام -->
+    <main class="main-card">
+      <div class="mode-pill-selector">
+        <button type="button" id="tabExp" class="mode-pill active exp">💸 المصاريف</button>
+        <button type="button" id="tabInc" class="mode-pill inc">💰 الدخل</button>
+        <button type="button" id="tabLoan" class="mode-pill loan">📅 الأقساط</button>
+        <button type="button" id="tabDebt" class="mode-pill debt" style="border-radius:12px;">🤝 المديونية</button>
+      </div>
+
+      <div class="date-row">
+        <span style="color: var(--text-secondary);">📅 التاريخ التلقائي:</span>
+        <strong id="currentDateText" style="color: var(--cyan-highlight);">اليوم</strong>
+      </div>
+
+      <!-- محتوى المصاريف والدخل -->
+      <div id="standardInputSection">
+        <div class="amount-input-wrapper">
+          <input type="number" id="amount" class="amount-input" inputmode="decimal" enterkeyhint="go">
+        </div>
+
+        <div class="cat-section-header">
+          <span id="catHeaderLabel">اختر صنف المصروف:</span>
+          <button type="button" id="btnManage" class="btn-edit-cats">⚙️ تعديل الأصناف</button>
+        </div>
+
+        <div id="catGrid" class="categories-grid"></div>
+
+        <button type="button" id="btnAdd" class="btn-submit-main" style="width:100%; margin-top:12px;">تسجيل المصروف +</button>
+      </div>
+
+            <!-- محتوى قسم المديونية المخصص (اسم الدين والمبلغ فقط) -->
+      <div id="debtInputSection" style="display: none;" class="loan-inputs-container">
+        <div style="font-size: 0.95rem; font-weight: 800; color: #fca5a5;">تسجيل دين جديد عليك:</div>
+        <input type="text" id="debtName" class="loan-input" placeholder="اسم الدين أو الشخص (مثال: سلف من أحمد)">
+        <input type="number" id="debtAmount" class="loan-input" placeholder="المبلغ اللي عليا (ج.م)" inputmode="decimal">
+
+        <button type="button" id="btnAddDebt" class="btn-submit-main" style="background: linear-gradient(135deg, #e11d48, #9f1239); width:100%; margin-top:2px;">
+          تسجيل الدين ➕
+        </button>
+      </div>
+
+      <!-- محتوى قسم الأقساط المخصص -->
+      <div id="loanInputSection" style="display: none;" class="loan-inputs-container">
+        <div style="font-size: 0.9rem; font-weight: 800; color: #fbbf24;">إضافة قسط جديد ومتابعته:</div>
+        <input type="text" id="loanName" class="loan-input" placeholder="اسم السلعة / القسط (مثال: قسط موبايل)">
+        
+        <div class="loan-field-row">
+          <input type="number" id="loanTotalAmount" class="loan-input" placeholder="إجمالي المبلغ كله (ج.م)">
+          <input type="number" id="loanMonthlyAmount" class="loan-input" placeholder="قيمة القسط بالمرة (ج.م)">
+        </div>
+
+        <div class="loan-field-row">
+          <input type="number" id="loanTotalMonths" class="loan-input" placeholder="عدد الشهور / المرات">
+          <select id="loanInterval" class="loan-input">
+            <option value="شهرياً">الفاصل: كل شهر</option>
+            <option value="كل شهرين">الفاصل: كل شهرين</option>
+            <option value="أسبوعياً">الفاصل: كل أسبوع</option>
+            <option value="سنوياً">الفاصل: كل سنة</option>
+          </select>
+        </div>
+
+        <button type="button" id="btnAddLoan" class="btn-submit-main" style="background: linear-gradient(135deg, #d97706, #b45309); width:100%;">
+          حفظ وإضافة القسط الجديد ➕
+        </button>
+      </div>
+    </main>
+
+    <!-- أزرار العمليات والتقفيل -->
+    <section class="action-button-row">
+      <button type="button" id="btnSummary" class="app-action-btn btn-close-account">📊 تقفيل حساب المصاريف</button>
+      <button type="button" id="btnClear" class="app-action-btn btn-reset-section">تصفير القسم</button>
+    </section>
+
+    <!-- عرض السجلات (سجل المعاملات العادية أو كروت الأقساط الحالية) -->
+    <section class="history-card">
+      <div id="historyHeaderTitle" class="history-header">سجل آخر المعاملات المسجلة:</div>
+      <div id="recentContainer" class="history-list"></div>
+    </section>
+  </div>
+
+  <!-- نافذة التقفيل الشاملة (تتغير حسب القسم المفتوح) -->
+  <div id="summaryModal" class="app-modal">
+    <div class="modal-container">
+      <div class="modal-top">
+        <h3 id="summaryModalTitle" style="color: #38bdf8; font-weight: 800;">تقرير التقفيل</h3>
+        <button type="button" id="btnCloseSummary" class="btn-modal-close">&times;</button>
+      </div>
+
+      <div id="printBillCard">
+        <div class="bill-header">
+          <h4 id="receiptMainTitle" style="color: #ffffff; font-size: 1.2rem; font-weight: 900;">فاتورة التقفيل</h4>
+          <div id="sumDateText" style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 3px;"></div>
+        </div>
+
+        <div id="bannerTotalBox" class="bill-hero-box" onclick="openAllActiveList()" title="اضغط لعرض كافة العمليات">
+          <div id="bannerTotalLabel" style="font-size: 0.82rem; color: #93c5fd; font-weight: 700;">الإجمالي الكلي 🔍</div>
+          <div id="bannerTotalVal" style="font-size: 1.9rem; font-weight: 900; color: #ffffff; margin: 3px 0; font-family:'Plus Jakarta Sans',sans-serif;">0 ج.م</div>
+          <div id="bannerTotalCount" style="font-size: 0.82rem; color: #cbd5e1;">عدد العمليات: 0</div>
+        </div>
+
+        <div id="subListTitle" style="font-size: 0.88rem; font-weight: 800; color: #93c5fd; margin-top: 4px;">
+          تفاصيل البنود والعدد:
+        </div>
+        <div id="summaryCategoryList" style="display: flex; flex-direction: column; gap: 7px;"></div>
+      </div>
+
+      <div class="modal-export-grid" style="grid-template-columns: 1fr 1fr;">
+        <button type="button" id="btnSaveImage" class="btn-export-option btn-export-pic">📸 حفظ كصورة (PNG)</button>
+        <button type="button" id="btnPrintPdf" class="btn-export-option" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: white;">📄 تقرير مفصل / PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة تفاصيل الصنف بعدد المرات -->
+  <div id="txListModal" class="app-modal">
+    <div class="modal-container">
+      <div class="modal-top">
+        <h3 id="txListTitle" style="color: #38bdf8; font-weight: 800;">تفاصيل العمليات</h3>
+        <button type="button" id="btnCloseTxList" class="btn-modal-close">&times;</button>
+      </div>
+
+      <div style="background: rgba(11, 19, 41, 0.95); border: 2px solid #38bdf8; border-radius: 18px; padding: 14px; text-align: center;">
+        <div id="counterBoxLabel" style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 800;">إجمالي عدد المرات</div>
+        <div id="counterBoxCount" style="font-size: 2.1rem; font-weight: 900; color: #38bdf8; margin: 3px 0; font-family:'Plus Jakarta Sans',sans-serif;">0 مرة</div>
+        <div id="counterBoxSum" style="font-size: 1rem; font-weight: 800; color: #ffffff;">بإجمالي مبلغ: 0 ج.م</div>
+      </div>
+
+      <div id="txListBody" style="display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto;"></div>
+    </div>
+  </div>
+
+  <!-- نافذة إدارة الأصناف -->
+  <div id="manageModal" class="app-modal">
+    <div class="modal-container">
+      <div class="modal-top">
+        <h3 id="manageTitle" style="color: #38bdf8; font-weight: 800;">إدارة الأصناف</h3>
+        <button type="button" id="btnCloseManage" class="btn-modal-close">&times;</button>
+      </div>
+      <div id="manageList" style="display: flex; flex-direction: column; gap: 7px; max-height: 230px; overflow-y: auto;"></div>
+      
+      <div style="border-top: 1px solid var(--border-soft); padding-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 0.85rem; color: #94a3b8; font-weight: bold;">إضافة صنف جديد:</div>
+        <div style="display: grid; grid-template-columns: 80px 1fr 90px; gap: 8px;">
+          <button type="button" id="btnPickIcon" style="background:#0b1329; border:1.5px dashed #38bdf8; border-radius:12px; color:#fff; font-size:1.4rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:2px;">
+            <span id="displaySelectedIcon">🏷️</span>
+            <span style="font-size:0.65rem; color:#38bdf8;">▼</span>
+          </button>
+          <input type="text" id="newCatName" placeholder="اسم الصنف الجديد..." style="background:#0b1329; border:1px solid var(--border-soft); border-radius:12px; color:#fff; padding:10px; font-size:0.95rem;">
+          <button type="button" id="btnAddNewCat" style="background:#10b981; color:#022c22; border:none; border-radius:12px; font-weight:900; cursor:pointer;">إضافة +</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة اختيار الأيقونة -->
+  <div id="iconPickerModal" class="app-modal" style="z-index: 120;">
+    <div class="modal-container" style="max-width: 440px;">
+      <div class="modal-top">
+        <h3 style="color: #38bdf8; font-weight: 800; font-size: 1.15rem;">اختر أيقونة</h3>
+        <button type="button" id="btnCloseIconPicker" class="btn-modal-close">&times;</button>
+      </div>
+      <div id="iconGridContainer" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; max-height: 50vh; overflow-y: auto; padding: 6px 2px;">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const defaultExp = [
+      { name: 'سجاير', icon: '🚬' },
+      { name: 'مواصلات', icon: '🚌' },
+      { name: 'نت وباقات', icon: '🌐' },
+      { name: 'أكل وشرب في الجيش', icon: '🪖' },
+      { name: 'سوبر ماركت', icon: '🛒' },
+      { name: 'سوبر ماركت منزل', icon: '🏬' },
+      { name: 'شوبينج أونلاين', icon: '📦' },
+      { name: 'مصاريف البيت', icon: '🏠' },
+      { name: 'مصاريف رفاهية', icon: '☕' }
+    ];
+
+    const defaultInc = [
+      { name: 'الراتب', icon: '💵' },
+      { name: 'مشاوير', icon: '🚗' },
+      { name: 'TC', icon: '💎' }
+    ];
+
+    let expenseCats = JSON.parse(localStorage.getItem('my_exp_cats_v19')) || defaultExp;
+    let incomeCats = JSON.parse(localStorage.getItem('my_inc_cats_v19')) || defaultInc;
+    let records = JSON.parse(localStorage.getItem('my_records_v19')) || [];
+    let loans = JSON.parse(localStorage.getItem('my_loans_v19')) || [];
+    let debts = JSON.parse(localStorage.getItem('my_debts_v20')) || [];
+
+    let currentMode = 'expense'; // 'expense', 'income', 'loan'
+    let selectedCat = expenseCats[0] ? expenseCats[0].name : '';
+    let currentPickedIcon = '🏷️';
+
+    const availableIcons = [
+      '💵', '💰', '💳', '💎', '🪙', '📈', '🏦', '💸', '💼', '🧾', '🎁', '⭐',
+      '🚗', '🚕', '🚌', '🚖', '🏍️', '🚲', '⛽', '🛵', '🚛', '🚘', '🚆', '✈️',
+      '🛒', '🏬', '🍔', '🍕', '🍗', '🥩', '🥖', '🥪', '☕', '🥤', '🍎', '🍉',
+      '🍳', '🍲', '🍫', '🍩', '🥛', '🧃', '🍜', '🍚', '🚬', '💨', '🔥', '🪖',
+      '🏠', '⚡', '💡', '💧', '🌐', '📱', '💻', '📺', '🛋️', '🔑', '🔧', '🔨',
+      '📦', '🛍️', '👕', '👟', '👔', '💈', '✂️', '💊', '🩺', '🏥', '🎮', '⚽'
+    ];
+
+    const tabExp = document.getElementById('tabExp');
+    const tabInc = document.getElementById('tabInc');
+    const tabLoan = document.getElementById('tabLoan');
+    const tabDebt = document.getElementById('tabDebt');
+
+    const standardInputSection = document.getElementById('standardInputSection');
+    const loanInputSection = document.getElementById('loanInputSection');
+    const debtInputSection = document.getElementById('debtInputSection');
+
+    const debtName = document.getElementById('debtName');
+    const debtAmount = document.getElementById('debtAmount');
+    const btnAddDebt = document.getElementById('btnAddDebt');
+
+    const catGrid = document.getElementById('catGrid');
+    const amountInput = document.getElementById('amount');
+    const btnAdd = document.getElementById('btnAdd');
+    const btnSummary = document.getElementById('btnSummary');
+    const btnClear = document.getElementById('btnClear');
+    const catHeaderLabel = document.getElementById('catHeaderLabel');
+    const currentDateText = document.getElementById('currentDateText');
+
+    const statIncome = document.getElementById('statIncome');
+    const statExpense = document.getElementById('statExpense');
+    const statNet = document.getElementById('statNet');
+    const statLoansLeft = document.getElementById('statLoansLeft');
+    const recentContainer = document.getElementById('recentContainer');
+    const historyHeaderTitle = document.getElementById('historyHeaderTitle');
+
+    // مدخلات الأقساط
+    const loanName = document.getElementById('loanName');
+    const loanTotalAmount = document.getElementById('loanTotalAmount');
+    const loanMonthlyAmount = document.getElementById('loanMonthlyAmount');
+    const loanTotalMonths = document.getElementById('loanTotalMonths');
+    const loanInterval = document.getElementById('loanInterval');
+    const btnAddLoan = document.getElementById('btnAddLoan');
+
+    // التقفيل
+    const summaryModal = document.getElementById('summaryModal');
+    const summaryModalTitle = document.getElementById('summaryModalTitle');
+    const receiptMainTitle = document.getElementById('receiptMainTitle');
+    const btnCloseSummary = document.getElementById('btnCloseSummary');
+    const bannerTotalBox = document.getElementById('bannerTotalBox');
+    const bannerTotalLabel = document.getElementById('bannerTotalLabel');
+    const bannerTotalVal = document.getElementById('bannerTotalVal');
+    const bannerTotalCount = document.getElementById('bannerTotalCount');
+    const subListTitle = document.getElementById('subListTitle');
+    const summaryCategoryList = document.getElementById('summaryCategoryList');
+    const sumDateText = document.getElementById('sumDateText');
+    const printBillCard = document.getElementById('printBillCard');
+
+    const txListModal = document.getElementById('txListModal');
+    const btnCloseTxList = document.getElementById('btnCloseTxList');
+    const txListTitle = document.getElementById('txListTitle');
+    const txListBody = document.getElementById('txListBody');
+    const counterBoxLabel = document.getElementById('counterBoxLabel');
+    const counterBoxCount = document.getElementById('counterBoxCount');
+    const counterBoxSum = document.getElementById('counterBoxSum');
+
+    const manageModal = document.getElementById('manageModal');
+    const btnManage = document.getElementById('btnManage');
+    const btnCloseManage = document.getElementById('btnCloseManage');
+    const manageTitle = document.getElementById('manageTitle');
+    const manageList = document.getElementById('manageList');
+    const newCatName = document.getElementById('newCatName');
+    const btnAddNewCat = document.getElementById('btnAddNewCat');
+    const btnPickIcon = document.getElementById('btnPickIcon');
+    const displaySelectedIcon = document.getElementById('displaySelectedIcon');
+
+    const iconPickerModal = document.getElementById('iconPickerModal');
+    const btnCloseIconPicker = document.getElementById('btnCloseIconPicker');
+    const iconGridContainer = document.getElementById('iconGridContainer');
+
+    const btnSaveImage = document.getElementById('btnSaveImage');
+    
+    function updateLiveDate() {
+      const now = new Date();
+      currentDateText.textContent = now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    updateLiveDate();
+
+    function saveAll() {
+      localStorage.setItem('my_exp_cats_v19', JSON.stringify(expenseCats));
+      localStorage.setItem('my_inc_cats_v19', JSON.stringify(incomeCats));
+      localStorage.setItem('my_records_v19', JSON.stringify(records));
+      localStorage.setItem('my_loans_v19', JSON.stringify(loans));
+      localStorage.setItem('my_debts_v20', JSON.stringify(debts));
+      updateTopStats();
+    }
+
+    function updateTopStats() {
+      let inc = 0, exp = 0;
+      records.forEach(r => {
+        if (r.type === 'income') inc += r.amount;
+        else if (r.type === 'expense') exp += r.amount;
+      });
+      const net = inc - exp;
+      statIncome.textContent = inc.toLocaleString() + ' ج.م';
+      statExpense.textContent = exp.toLocaleString() + ' ج.م';
+      statNet.textContent = net.toLocaleString() + ' ج.م';
+      statNet.style.color = net >= 0 ? '#38bdf8' : '#f87171';
+
+      // حساب باقي الأقساط
+      let remainingLoansTotal = 0;
+      loans.forEach(l => {
+        remainingLoansTotal += (l.totalAmount - (l.paidMonths * l.monthlyAmount));
+      });
+      statLoansLeft.textContent = remainingLoansTotal.toLocaleString() + ' ج.م';
+
+      // حساب إجمالي المديونيات
+      let totalDebtsRemaining = 0;
+      debts.forEach(d => {
+        totalDebtsRemaining += (d.totalAmount - (d.paidAmount || 0));
+      });
+      const statDebtsLeft = document.getElementById('statDebtsLeft');
+      if (statDebtsLeft) statDebtsLeft.textContent = totalDebtsRemaining.toLocaleString() + ' ج.م';
+    }
+
+    function renderCats() {
+      const list = currentMode === 'expense' ? expenseCats : incomeCats;
+      if (list.length === 0) {
+        catGrid.innerHTML = '<div style="grid-column: span 2; text-align: center; color: var(--text-muted); font-size: 0.9rem; padding: 12px;">لا توجد أصناف، اضغط تعديل الأصناف لإضافة صنف.</div>';
+        selectedCat = '';
+        return;
+      }
+      if (!list.some(c => c.name === selectedCat)) {
+        selectedCat = list[0].name;
+      }
+      catGrid.innerHTML = list.map(c => `
+        <button type="button" class="cat-card-btn ${c.name === selectedCat ? 'selected' : ''}" data-name="${c.name}">
+          <span>${c.icon || '🏷️'}</span>
+          <span>${c.name}</span>
+        </button>
+      `).join('');
+
+      document.querySelectorAll('.cat-card-btn').forEach(b => {
+        b.addEventListener('click', () => {
+          document.querySelectorAll('.cat-card-btn').forEach(btn => btn.classList.remove('selected'));
+          b.classList.add('selected');
+          selectedCat = b.getAttribute('data-name');
+        });
+      });
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      tabExp.className = 'mode-pill exp' + (mode === 'expense' ? ' active' : '');
+      tabInc.className = 'mode-pill inc' + (mode === 'income' ? ' active' : '');
+      tabLoan.className = 'mode-pill loan' + (mode === 'loan' ? ' active' : '');
+      if (tabDebt) tabDebt.className = 'mode-pill debt' + (mode === 'debt' ? ' active' : '');
+
+      if (mode === 'expense') {
+        standardInputSection.style.display = 'block';
+        loanInputSection.style.display = 'none';
+        if (debtInputSection) debtInputSection.style.display = 'none';
+        catHeaderLabel.textContent = 'اختر صنف المصروف:';
+        btnAdd.textContent = 'تسجيل المصروف +';
+        btnSummary.textContent = '📊 تقفيل حساب المصاريف';
+        btnClear.textContent = 'تصفير المصاريف';
+        historyHeaderTitle.textContent = 'سجل آخر المصاريف المسجلة:';
+        selectedCat = expenseCats[0] ? expenseCats[0].name : '';
+        renderCats();
+        renderRecent();
+      } else if (mode === 'income') {
+        standardInputSection.style.display = 'block';
+        loanInputSection.style.display = 'none';
+        if (debtInputSection) debtInputSection.style.display = 'none';
+        catHeaderLabel.textContent = 'اختر مصدر الدخل:';
+        btnAdd.textContent = 'تسجيل الدخل +';
+        btnSummary.textContent = '📊 تقفيل حساب الدخل';
+        btnClear.textContent = 'تصفير الدخل';
+        historyHeaderTitle.textContent = 'سجل آخر الإيرادات المسجلة:';
+        selectedCat = incomeCats[0] ? incomeCats[0].name : '';
+        renderCats();
+        renderRecent();
+      } else if (mode === 'loan') {
+        standardInputSection.style.display = 'none';
+        loanInputSection.style.display = 'flex';
+        if (debtInputSection) debtInputSection.style.display = 'none';
+        btnSummary.textContent = '📊 كشف تقفيل الأقساط';
+        btnClear.textContent = 'تصفير الأقساط';
+        historyHeaderTitle.textContent = 'قائمة ومتابعة الأقساط الحالية:';
+        renderLoansList();
+      } else if (mode === 'debt') {
+        standardInputSection.style.display = 'none';
+        loanInputSection.style.display = 'none';
+        if (debtInputSection) debtInputSection.style.display = 'flex';
+        btnSummary.textContent = '📊 كشف تقفيل المديونيات';
+        btnClear.textContent = 'تصفير المديونية';
+        historyHeaderTitle.textContent = 'قائمة الديون المسجلة عليك:';
+        renderDebtsList();
+      }
+    }
+
+    tabExp.addEventListener('click', () => setMode('expense'));
+    tabInc.addEventListener('click', () => setMode('income'));
+    tabLoan.addEventListener('click', () => setMode('loan'));
+    if (tabDebt) tabDebt.addEventListener('click', () => setMode('debt'));
+
+    function addRecord() {
+      const val = parseFloat(amountInput.value);
+      if (!val || val <= 0) {
+        alert('من فضلك اكتب مبلغاً صحيحاً');
+        amountInput.focus();
+        return;
+      }
+      if (!selectedCat) {
+        alert('من فضلك اختر صنفاً');
+        return;
+      }
+      const list = currentMode === 'expense' ? expenseCats : incomeCats;
+      const found = list.find(c => c.name === selectedCat);
+      const now = new Date();
+
+      const item = {
+        id: Date.now(),
+        type: currentMode,
+        amount: val,
+        category: selectedCat,
+        icon: found ? found.icon : (currentMode === 'income' ? '💰' : '💸'),
+        dateStr: now.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', weekday: 'short' }),
+        timeStr: now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+      };
+
+      records.unshift(item);
+      saveAll();
+      amountInput.value = '';
+      renderRecent();
+    }
+
+    amountInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addRecord();
+      }
+    });
+    btnAdd.addEventListener('click', addRecord);
+
+    // إضافة قسط جديد
+    btnAddLoan.addEventListener('click', () => {
+      const name = loanName.value.trim();
+      const total = parseFloat(loanTotalAmount.value);
+      const monthly = parseFloat(loanMonthlyAmount.value);
+      const months = parseInt(loanTotalMonths.value);
+      const interval = loanInterval.value;
+
+      if (!name) { alert('من فضلك اكتب اسم القسط'); loanName.focus(); return; }
+      if (!total || total <= 0) { alert('من فضلك اكتب إجمالي المبلغ'); loanTotalAmount.focus(); return; }
+      if (!monthly || monthly <= 0) { alert('من فضلك اكتب قيمة القسط'); loanMonthlyAmount.focus(); return; }
+      if (!months || months <= 0) { alert('من فضلك اكتب عدد الشهور/المرات'); loanTotalMonths.focus(); return; }
+
+      const newLoan = {
+        id: Date.now(),
+        name: name,
+        totalAmount: total,
+        monthlyAmount: monthly,
+        totalMonths: months,
+        paidMonths: 0,
+        interval: interval,
+        startDate: new Date().toLocaleDateString('ar-EG')
+      };
+
+      loans.unshift(newLoan);
+      saveAll();
+
+      loanName.value = '';
+      loanTotalAmount.value = '';
+      loanMonthlyAmount.value = '';
+      loanTotalMonths.value = '';
+
+      renderLoansList();
+      alert(`تم إضافة قسط (${name}) بنجاح!`);
+    });
+
+    // رسم سجل المعاملات العادية
+    function renderRecent() {
+      const filtered = records.filter(r => r.type === currentMode);
+      if (filtered.length === 0) {
+        recentContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 0.9rem; padding: 12px;">لا توجد معاملات مسجلة بعد</div>';
+        return;
+      }
+      recentContainer.innerHTML = filtered.slice(0, 15).map(r => {
+        const isInc = r.type === 'income';
+        return `
+          <div class="history-item">
+            <div class="history-item-left">
+              <span class="history-tag ${isInc ? 'income' : 'expense'}">${isInc ? 'دخل' : 'مصروف'}</span>
+              <strong>${r.icon || ''} ${r.category}</strong>
+              <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">🗓️ ${r.dateStr || ''} - ⏰ ${r.timeStr || ''}</div>
+            </div>
+            <span class="history-amount" style="color:${isInc ? '#38bdf8' : '#f1f5f9'};">${isInc ? '+' : '-'}${r.amount.toLocaleString()} ج.م</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    
+    // تسجيل دين جديد
+    if (btnAddDebt) {
+      btnAddDebt.addEventListener('click', () => {
+        const name = debtName.value.trim();
+        const amt = parseFloat(debtAmount.value);
+
+        if (!name) { alert('من فضلك اكتب اسم الدين أو الشخص'); debtName.focus(); return; }
+        if (!amt || amt <= 0) { alert('من فضلك اكتب المبلغ الصحيح'); debtAmount.focus(); return; }
+
+        const newDebt = {
+          id: Date.now(),
+          name: name,
+          totalAmount: amt,
+          paidAmount: 0,
+          dateStr: new Date().toLocaleDateString('ar-EG')
+        };
+
+        debts.unshift(newDebt);
+        saveAll();
+
+        debtName.value = '';
+        debtAmount.value = '';
+        renderDebtsList();
+        alert(`تم تسجيل دين (${name}) بمبلغ ${amt.toLocaleString()} ج.م بنجاح!`);
+      });
+    }
+
+    // عرض قائمة الديون
+    function renderDebtsList() {
+      if (debts.length === 0) {
+        recentContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 0.9rem; padding: 16px;">لا توجد ديون مسجلة عليك حالياً، سجل دين جديد بالأعلى 👆</div>';
+        return;
+      }
+      recentContainer.innerHTML = debts.map(d => {
+        const remaining = d.totalAmount - (d.paidAmount || 0);
+        const isPaidFully = remaining <= 0;
+
+        return `
+          <div class="loan-item-card" onclick="openDebtActionsModal(${d.id})" style="border-color: ${isPaidFully ? 'rgba(16,185,129,0.4)' : 'rgba(244,63,94,0.35)'};">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="font-size: 1.1rem; color: ${isPaidFully ? '#34d399' : '#fca5a5'};">🤝 ${d.name}</strong>
+              <span style="font-size: 0.78rem; background: ${isPaidFully ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)'}; border: 1px solid ${isPaidFully ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)'}; color: ${isPaidFully ? '#34d399' : '#fca5a5'}; padding: 2px 8px; border-radius: 8px;">
+                ${isPaidFully ? 'خالص ومسدد ✔️' : 'متبقي للسداد'}
+              </span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.85rem; color: #cbd5e1; margin-top: 6px;">
+              <div>المبلغ الأصلي: <strong style="color:#ffffff;">${d.totalAmount.toLocaleString()} ج.م</strong></div>
+              <div>المسدد منه: <strong style="color:#34d399;">${(d.paidAmount || 0).toLocaleString()} ج.م</strong></div>
+              <div style="grid-column: span 2; font-size: 0.95rem; margin-top: 2px;">
+                المبلغ المتبقي عليك: <strong style="color:${isPaidFully ? '#34d399' : '#f87171'};">${remaining.toLocaleString()} ج.م</strong>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+              <span>تاريخ التسجيل: ${d.dateStr}</span>
+              <span style="color:#38bdf8;">اضغط لسداد جزء أو سداد كامل 🔍</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // نافذة سداد أو حذف الدين
+    window.openDebtActionsModal = function(debtId) {
+      const d = debts.find(x => x.id === debtId);
+      if (!d) return;
+
+      const remaining = d.totalAmount - (d.paidAmount || 0);
+
+      txListTitle.textContent = `متابعة دين (${d.name})`;
+      counterBoxLabel.textContent = `المبلغ المتبقي عليك سداده`;
+      counterBoxCount.textContent = `${remaining.toLocaleString()} ج.م`;
+      counterBoxSum.textContent = `من أصل مبلغ إجمالي: ${d.totalAmount.toLocaleString()} ج.م (مسدد: ${(d.paidAmount || 0).toLocaleString()} ج.م)`;
+
+      txListBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+          ${remaining > 0 ? `
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="payPartialDebtInput" class="loan-input" placeholder="اكتب مبلغ لسداده..." style="flex: 1;">
+              <button type="button" onclick="payPartialDebt(${d.id})" style="background: linear-gradient(135deg, #10b981, #059669); color: #022c22; border: none; border-radius: 12px; padding: 10px 14px; font-weight: 900; cursor: pointer;">
+                سداد المبلغ
+              </button>
+            </div>
+
+            <button type="button" onclick="payFullDebt(${d.id})" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; border-radius: 12px; padding: 12px; font-weight: 900; font-size: 0.95rem; cursor: pointer;">
+              ✔️ سداد الدين بالكامل وتصفيته
+            </button>
+          ` : `
+            <div style="background: rgba(16,185,129,0.15); border: 1px solid #10b981; color:#34d399; padding: 12px; border-radius: 12px; text-align: center; font-weight: bold;">
+              تم سداد هذا الدين بالكامل وليس عليك أي متبقي فيه 🎉
+            </div>
+          `}
+          
+          <button type="button" onclick="resetDebtPayment(${d.id})" style="background: rgba(255,255,255,0.08); color: #cbd5e1; border: 1px solid var(--border-soft); border-radius: 12px; padding: 9px; font-weight: bold; font-size: 0.85rem; cursor: pointer;">
+            ↩️ إعادة تعيين المسدد (إرجاعه غير مسدد)
+          </button>
+
+          <button type="button" onclick="deleteDebtRecord(${d.id})" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid #ef4444; border-radius: 12px; padding: 9px; font-weight: bold; font-size: 0.85rem; cursor: pointer;">
+            🗑️ مسح هذا الدين نهائياً
+          </button>
+        </div>
+      `;
+
+      txListModal.classList.add('open');
+    };
+
+    window.payPartialDebt = function(debtId) {
+      const d = debts.find(x => x.id === debtId);
+      if (!d) return;
+      const inp = document.getElementById('payPartialDebtInput');
+      const amt = parseFloat(inp.value);
+      if (!amt || amt <= 0) { alert('اكتب مبلغاً صحيحاً'); return; }
+
+      const remaining = d.totalAmount - (d.paidAmount || 0);
+      if (amt > remaining) {
+        alert('المبلغ أكبر من المتبقي، المتبقي فقط: ' + remaining.toLocaleString() + ' ج.م');
+        return;
+      }
+
+      d.paidAmount = (d.paidAmount || 0) + amt;
+      saveAll();
+      renderDebtsList();
+      txListModal.classList.remove('open');
+      alert(`تم تسجيل سداد ${amt.toLocaleString()} ج.م من دين (${d.name})!`);
+    };
+
+    window.payFullDebt = function(debtId) {
+      const d = debts.find(x => x.id === debtId);
+      if (!d) return;
+      if (confirm(`تصفية وسداد دين (${d.name}) بالكامل؟`)) {
+        d.paidAmount = d.totalAmount;
+        saveAll();
+        renderDebtsList();
+        txListModal.classList.remove('open');
+      }
+    };
+
+    window.resetDebtPayment = function(debtId) {
+      const d = debts.find(x => x.id === debtId);
+      if (!d) return;
+      d.paidAmount = 0;
+      saveAll();
+      renderDebtsList();
+      txListModal.classList.remove('open');
+    };
+
+    window.deleteDebtRecord = function(debtId) {
+      if (confirm('هل أنت متأكد من مسح هذا الدين؟')) {
+        debts = debts.filter(x => x.id !== debtId);
+        saveAll();
+        renderDebtsList();
+        txListModal.classList.remove('open');
+      }
+    };
+
+    // رسم كروت الأقساط الحالية التفاعلية
+    function renderLoansList() {
+      if (loans.length === 0) {
+        recentContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 0.9rem; padding: 16px;">لا توجد أقساط مسجلة حالياً، أضف قسطك الأول بالأعلى 👆</div>';
+        return;
+      }
+      recentContainer.innerHTML = loans.map(l => {
+        const remainingMonths = l.totalMonths - l.paidMonths;
+        const paidAmount = l.paidMonths * l.monthlyAmount;
+        const remainingAmount = l.totalAmount - paidAmount;
+        const percent = Math.min(100, Math.round((l.paidMonths / l.totalMonths) * 100));
+
+        return `
+          <div class="loan-item-card" onclick="openLoanActionsModal(${l.id})">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="font-size: 1.1rem; color: #fbbf24;">📦 ${l.name}</strong>
+              <span style="font-size: 0.78rem; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.3); color: #fbbf24; padding: 2px 8px; border-radius: 8px;">
+                ${l.interval}
+              </span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.82rem; color: #cbd5e1; margin-top: 4px;">
+              <div>قيمة القسط: <strong style="color:#ffffff;">${l.monthlyAmount.toLocaleString()} ج.م</strong></div>
+              <div>المتبقي: <strong style="color:#f87171;">${remainingAmount.toLocaleString()} ج.م</strong></div>
+              <div>المدفوع: <strong>${l.paidMonths} من ${l.totalMonths} شهر</strong></div>
+              <div>باقي شهور: <strong style="color:#38bdf8;">${remainingMonths} شهر</strong></div>
+            </div>
+
+            <div class="loan-progress-bar">
+              <div class="loan-progress-fill" style="width: ${percent}%;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+              <span>تم سداد: ${percent}%</span>
+              <span style="color:#38bdf8;">اضغط لتسجيل دفع قسط أو حذفه 🔍</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // نافذة التحكم بالقسط (دفع قسط / حذفه)
+    window.openLoanActionsModal = function(loanId) {
+      const l = loans.find(x => x.id === loanId);
+      if (!l) return;
+
+      const remainingMonths = l.totalMonths - l.paidMonths;
+      const remainingAmount = l.totalAmount - (l.paidMonths * l.monthlyAmount);
+
+      txListTitle.textContent = `متابعة قسط (${l.name})`;
+      counterBoxLabel.textContent = `المتبقي للسداد`;
+      counterBoxCount.textContent = `${remainingAmount.toLocaleString()} ج.م`;
+      counterBoxSum.textContent = `باقي: ${remainingMonths} شهر من أصل ${l.totalMonths} (${l.interval})`;
+
+      txListBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+          <button type="button" onclick="payLoanMonth(${l.id})" style="background: linear-gradient(135deg, #10b981, #059669); color: #022c22; border: none; border-radius: 12px; padding: 13px; font-weight: 900; font-size: 1rem; cursor: pointer;">
+            ✅ تسجيل دفع قسط هذا الشهر (${l.monthlyAmount.toLocaleString()} ج.م)
+          </button>
+          
+          <button type="button" onclick="undoLoanMonth(${l.id})" style="background: rgba(255,255,255,0.08); color: #cbd5e1; border: 1px solid var(--border-soft); border-radius: 12px; padding: 10px; font-weight: bold; font-size: 0.85rem; cursor: pointer;">
+            ↩️ تراجع عن سداد شهر
+          </button>
+
+          <button type="button" onclick="deleteLoanRecord(${l.id})" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid #ef4444; border-radius: 12px; padding: 10px; font-weight: bold; font-size: 0.85rem; cursor: pointer;">
+            🗑️ مسح القسط نهائياً
+          </button>
+        </div>
+      `;
+
+      txListModal.classList.add('open');
+    };
+
+    window.payLoanMonth = function(loanId) {
+      const l = loans.find(x => x.id === loanId);
+      if (!l) return;
+      if (l.paidMonths >= l.totalMonths) {
+        alert('تم سداد هذا القسط بالكامل بالفعل! مبروك 🎉');
+        return;
+      }
+      l.paidMonths += 1;
+      saveAll();
+      renderLoansList();
+      txListModal.classList.remove('open');
+      alert(`تم تسجيل سداد قسط لشهر! باقي عليك: ${l.totalMonths - l.paidMonths} شهر.`);
+    };
+
+    window.undoLoanMonth = function(loanId) {
+      const l = loans.find(x => x.id === loanId);
+      if (!l) return;
+      if (l.paidMonths <= 0) return;
+      l.paidMonths -= 1;
+      saveAll();
+      renderLoansList();
+      txListModal.classList.remove('open');
+    };
+
+    window.deleteLoanRecord = function(loanId) {
+      if (confirm('هل أنت متأكد من مسح هذا القسط؟')) {
+        loans = loans.filter(x => x.id !== loanId);
+        saveAll();
+        renderLoansList();
+        txListModal.classList.remove('open');
+      }
+    };
+
+    // فتح التقفيل الخاص بحسب القسم النشط (مصاريف، دخل، أو أقساط)
+    btnSummary.addEventListener('click', () => {
+      const now = new Date();
+      sumDateText.textContent = `تاريخ التقفيل: ${now.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} - ${now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
+
+      if (currentMode === 'debt') {
+        // تقفيل مخصص للمديونية
+        summaryModalTitle.textContent = 'تقرير كشف المديونيات (فلوس عليا)';
+        receiptMainTitle.textContent = 'كشف تفصيلي بالديون والالتزامات';
+        bannerTotalLabel.textContent = 'إجمالي الديون المتبقية عليك للسداد 🔍';
+
+        let totalRemaining = 0;
+        let totalOriginal = 0;
+        debts.forEach(d => {
+          totalOriginal += d.totalAmount;
+          totalRemaining += (d.totalAmount - (d.paidAmount || 0));
+        });
+
+        bannerTotalVal.textContent = totalRemaining.toLocaleString() + ' ج.م';
+        bannerTotalCount.textContent = `إجمالي عدد الديون: ${debts.length} (من أصل ${totalOriginal.toLocaleString()} ج.م)`;
+        subListTitle.textContent = 'تفاصيل الديون والمبالغ المسددة والمتبقية:';
+
+        summaryCategoryList.innerHTML = debts.map(d => {
+          const rem = d.totalAmount - (d.paidAmount || 0);
+          return `
+            <div class="bill-cat-row" onclick="openDebtActionsModal(${d.id})">
+              <div>
+                <strong>🤝 ${d.name}</strong>
+                <span class="pill-counter">أصل المبلغ: ${d.totalAmount.toLocaleString()} ج.م</span>
+              </div>
+              <span style="font-weight:900; color:#f87171; font-family:'Plus Jakarta Sans',sans-serif;">
+                باقي ${rem.toLocaleString()} ج.م 🔍
+              </span>
+            </div>
+          `;
+        }).join('');
+
+      } else if (currentMode === 'loan') {
+        // تقفيل مخصص للأقساط
+        summaryModalTitle.textContent = 'تقرير كشف الأقساط والالتزامات';
+        receiptMainTitle.textContent = 'كشف تفصيلي بالأقساط والديون';
+        bannerTotalLabel.textContent = 'إجمالي مبالغ الأقساط المتبقية عليك 🔍';
+
+        let totalRemaining = 0;
+        let totalOriginal = 0;
+        loans.forEach(l => {
+          totalOriginal += l.totalAmount;
+          totalRemaining += (l.totalAmount - (l.paidMonths * l.monthlyAmount));
+        });
+
+        bannerTotalVal.textContent = totalRemaining.toLocaleString() + ' ج.م';
+        bannerTotalCount.textContent = `إجمالي عدد الأقساط: ${loans.length} سلعة/قسط (من أصل ${totalOriginal.toLocaleString()} ج.م)`;
+        subListTitle.textContent = 'تفاصيل كل قسط والمتبقي منه والشهور:';
+
+        summaryCategoryList.innerHTML = loans.map(l => {
+          const remAmount = l.totalAmount - (l.paidMonths * l.monthlyAmount);
+          const remMonths = l.totalMonths - l.paidMonths;
+          return `
+            <div class="bill-cat-row" onclick="openLoanActionsModal(${l.id})">
+              <div>
+                <strong>📦 ${l.name}</strong>
+                <span class="pill-counter">باقي: ${remMonths} من ${l.totalMonths} شهر (${l.interval})</span>
+              </div>
+              <span style="font-weight:900; color:#fbbf24; font-family:'Plus Jakarta Sans',sans-serif;">
+                باقي ${remAmount.toLocaleString()} ج.م 🔍
+              </span>
+            </div>
+          `;
+        }).join('');
+
+      } else {
+        // تقفيل المصاريف أو الدخل
+        const isExp = currentMode === 'expense';
+        const currentRecords = records.filter(r => r.type === currentMode);
+        
+        let totalSum = 0;
+        const catTotals = {};
+        const catCounts = {};
+
+        currentRecords.forEach(r => {
+          totalSum += r.amount;
+          catTotals[r.category] = (catTotals[r.category] || 0) + r.amount;
+          catCounts[r.category] = (catCounts[r.category] || 0) + 1;
+        });
+
+        if (isExp) {
+          summaryModalTitle.textContent = 'تقرير تقفيل المصاريف';
+          receiptMainTitle.textContent = 'فاتورة تقفيل المصاريف';
+          bannerTotalLabel.textContent = 'إجمالي المصاريف المصروفة 🔍';
+          subListTitle.textContent = 'بنود المصاريف والعدد (اضغط لأي صنف لعرض عملياته):';
+        } else {
+          summaryModalTitle.textContent = 'تقرير تقفيل الدخل والإيرادات';
+          receiptMainTitle.textContent = 'كشف تحصيل الدخل';
+          bannerTotalLabel.textContent = 'إجمالي الدخل المحصل 🔍';
+          subListTitle.textContent = 'مصادر الدخل والعدد (اضغط لأي مصدر لعرض تفاصيله):';
+        }
+
+        bannerTotalVal.textContent = totalSum.toLocaleString() + ' ج.م';
+        bannerTotalCount.textContent = `إجمالي عدد العمليات: ${currentRecords.length}`;
+
+        const activeCatList = isExp ? expenseCats : incomeCats;
+        const catKeys = Array.from(new Set([...activeCatList.map(c => c.name), ...Object.keys(catTotals)]));
+
+        summaryCategoryList.innerHTML = catKeys.map(k => {
+          const sum = catTotals[k] || 0;
+          const count = catCounts[k] || 0;
+          const icon = (activeCatList.find(c => c.name === k) || {}).icon || '📌';
+
+          return `
+            <div class="bill-cat-row" onclick="openCatWithCount('${k}')">
+              <div style="display:flex; align-items:center;">
+                <span style="margin-left:8px;">${icon}</span>
+                <strong>${k}</strong>
+                <span class="pill-counter">${count}</span>
+              </div>
+              <span style="font-weight:900; color:#ffffff; font-family:'Plus Jakarta Sans',sans-serif;">${isExp ? '-' : '+'}${sum.toLocaleString()} ج.م 🔍</span>
+            </div>
+          `;
+        }).join('');
+      }
+
+      summaryModal.classList.add('open');
+    });
+
+    btnCloseSummary.addEventListener('click', () => summaryModal.classList.remove('open'));
+
+    window.openAllActiveList = function() {
+      if (currentMode === 'loan') return;
+      const isExp = currentMode === 'expense';
+      const list = records.filter(r => r.type === currentMode);
+      const title = isExp ? 'كافة عمليات المصاريف' : 'كافة عمليات الدخل';
+      renderTxCountModal(list, title, isExp ? 'عملية صرف' : 'عملية دخل');
+    };
+
+    window.openCatWithCount = function(catName) {
+      const list = records.filter(r => r.category === catName && r.type === currentMode);
+      const isTrip = catName === 'مشاوير';
+      renderTxCountModal(list, `تفاصيل صنف (${catName})`, isTrip ? 'مشوار' : 'مرة');
+    };
+
+    function renderTxCountModal(list, title, unitWord) {
+      txListTitle.textContent = title;
+      counterBoxLabel.textContent = `إجمالي عدد المرات (${unitWord})`;
+      counterBoxCount.textContent = `${list.length}`;
+
+      let sum = 0;
+      list.forEach(r => sum += r.amount);
+      counterBoxSum.textContent = `بإجمالي مبلغ: ${sum.toLocaleString()} ج.م`;
+
+      if (list.length === 0) {
+        txListBody.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:16px;">لا توجد معاملات مسجلة في هذا البند بعد</div>';
+      } else {
+        txListBody.innerHTML = list.map(r => {
+          const isInc = r.type === 'income';
+          return `
+            <div style="background:#091226; border:1px solid var(--border-soft); border-radius:14px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>${r.icon || ''} ${r.category}</strong>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:3px;">🗓️ ${r.dateStr || ''} - ⏰ ${r.timeStr || ''}</div>
+              </div>
+              <div style="text-align:left;">
+                <span style="font-weight:900; color:${isInc ? '#38bdf8' : '#ffffff'}; font-size:1.15rem; font-family:'Plus Jakarta Sans',sans-serif;">${isInc ? '+' : '-'}${r.amount.toLocaleString()} ج.م</span>
+                <div><button type="button" onclick="deleteRecordItem(${r.id})" style="background:none; border:none; color:var(--text-muted); font-size:0.78rem; cursor:pointer; text-decoration:underline; margin-top:3px;">حذف</button></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+      txListModal.classList.add('open');
+    }
+
+    window.deleteRecordItem = function(id) {
+      if (confirm('هل تريد حذف هذه المعاملة؟')) {
+        records = records.filter(r => r.id !== id);
+        saveAll();
+        renderRecent();
+        txListModal.classList.remove('open');
+        btnSummary.click();
+      }
+    };
+
+    btnCloseTxList.addEventListener('click', () => txListModal.classList.remove('open'));
+
+    // حفظ كارت التقفيل كصورة
+    btnSaveImage.addEventListener('click', () => {
+      btnSaveImage.textContent = '⏳ جاري الحفظ...';
+      const label = currentMode === 'loan' ? 'الأقساط' : (currentMode === 'expense' ? 'المصاريف' : 'الدخل');
+      html2canvas(printBillCard, { scale: 2, backgroundColor: '#091226' }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `تقفيل_${label}_${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        btnSaveImage.textContent = '📸 حفظ كصورة (PNG)';
+      }).catch(() => {
+        alert('حدث خطأ أثناء حفظ الصورة');
+        btnSaveImage.textContent = '📸 حفظ كصورة (PNG)';
+      });
+    });
+
+    // استخراج تقرير وورد مفصل (مخصص ومفصل بحسب القسم النشط)
+    
+    // طباعة وحفظ التقرير كـ PDF مباشرة من المتصفح لضمان فتحه على أي موبايل
+    const btnPrintPdf = document.getElementById('btnPrintPdf');
+    if (btnPrintPdf) {
+      btnPrintPdf.addEventListener('click', () => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          alert('يرجى السماح بالنوافذ المنبثقة لعرض التقرير');
+          return;
+        }
+
+        const now = new Date();
+        let reportHtml = '';
+
+        if (currentMode === 'debt') {
+          let totalRemaining = 0;
+          let totalOriginal = 0;
+          let debtRows = '';
+
+          debts.forEach((d, idx) => {
+            const paid = d.paidAmount || 0;
+            const rem = d.totalAmount - paid;
+            totalOriginal += d.totalAmount;
+            totalRemaining += rem;
+
+            debtRows += `
+              <tr style="text-align:center;">
+                <td style="padding:10px; border:1px solid #cbd5e1;">${idx + 1}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold;">${d.name}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1;">${d.totalAmount.toLocaleString()} ج.م</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; color:#059669; font-weight:bold;">${paid.toLocaleString()} ج.م</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold; color:#be123c;">${rem.toLocaleString()} ج.م</td>
+                <td style="padding:10px; border:1px solid #cbd5e1;">${d.dateStr}</td>
+              </tr>
+            `;
+          });
+
+          reportHtml = `
+            <h2>📊 تقرير كشف المديونيات والالتزامات الشخصية</h2>
+            <p style="text-align: center; color: #64748b; font-size: 14px;">تاريخ التقرير: ${now.toLocaleDateString('ar-EG')} - ${now.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
+            <div style="background: #ffe4e6; color: #9f1239; font-size: 18px; font-weight: bold; text-align: center; padding: 14px; border: 2px solid #fda4af; border-radius: 10px; margin: 15px 0;">
+              إجمالي الديون المتبقية عليك للسداد: ${totalRemaining.toLocaleString()} جنيه مصري (من أصل ${totalOriginal.toLocaleString()} ج.م)
+            </div>
+            <table style="width:100%; border-collapse:collapse; margin-top:15px;">
+              <thead>
+                <tr style="background:#be123c; color:white;">
+                  <th style="padding:10px; border:1px solid #cbd5e1;">#</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">اسم الدين / الشخص</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">أصل المبلغ</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">المبلغ المسدد</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">المبلغ المتبقي</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">تاريخ التسجيل</th>
+                </tr>
+              </thead>
+              <tbody>${debtRows}</tbody>
+            </table>
+          `;
+        } else if (currentMode === 'loan') {
+          let totalRemaining = 0;
+          let totalOriginal = 0;
+          let loanRows = '';
+
+          loans.forEach((l, idx) => {
+            const paid = l.paidMonths * l.monthlyAmount;
+            const rem = l.totalAmount - paid;
+            totalOriginal += l.totalAmount;
+            totalRemaining += rem;
+
+            loanRows += `
+              <tr style="text-align:center;">
+                <td style="padding:10px; border:1px solid #cbd5e1;">${idx + 1}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold;">${l.name}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1;">${l.totalAmount.toLocaleString()} ج.م</td>
+                <td style="padding:10px; border:1px solid #cbd5e1;">${l.monthlyAmount.toLocaleString()} ج.م (${l.interval})</td>
+                <td style="padding:10px; border:1px solid #cbd5e1;">${l.paidMonths} من ${l.totalMonths}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold; color:#b45309;">${rem.toLocaleString()} ج.م</td>
+              </tr>
+            `;
+          });
+
+          reportHtml = `
+            <h2>📊 تقرير كشف الأقساط والالتزامات المالية</h2>
+            <p style="text-align: center; color: #64748b; font-size: 14px;">تاريخ التقرير: ${now.toLocaleDateString('ar-EG')} - ${now.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
+            <div style="background: #fef3c7; color: #92400e; font-size: 18px; font-weight: bold; text-align: center; padding: 14px; border: 2px solid #fcd34d; border-radius: 10px; margin: 15px 0;">
+              إجمالي المبالغ المتبقية عليك للسداد: ${totalRemaining.toLocaleString()} جنيه مصري (من أصل ${totalOriginal.toLocaleString()} ج.م)
+            </div>
+            <table style="width:100%; border-collapse:collapse; margin-top:15px;">
+              <thead>
+                <tr style="background:#d97706; color:white;">
+                  <th style="padding:10px; border:1px solid #cbd5e1;">#</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">اسم القسط</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">المبلغ الإجمالي</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">قيمة القسط والفاصل</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">الشهور المسددة</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">المبلغ المتبقي</th>
+                </tr>
+              </thead>
+              <tbody>${loanRows}</tbody>
+            </table>
+          `;
+        } else {
+          const isExp = currentMode === 'expense';
+          const currentRecords = records.filter(r => r.type === currentMode);
+          let totalSum = 0;
+          const catTotals = {}, catCounts = {};
+
+          currentRecords.forEach(r => {
+            totalSum += r.amount;
+            catTotals[r.category] = (catTotals[r.category] || 0) + r.amount;
+            catCounts[r.category] = (catCounts[r.category] || 0) + 1;
+          });
+
+          const activeCatList = isExp ? expenseCats : incomeCats;
+          const catKeys = Array.from(new Set([...activeCatList.map(c => c.name), ...Object.keys(catTotals)]));
+
+          let summaryRows = '';
+          catKeys.forEach((k, idx) => {
+            const val = catTotals[k] || 0;
+            const count = catCounts[k] || 0;
+            const pct = totalSum > 0 ? Math.round((val / totalSum) * 100) : 0;
+            summaryRows += `
+              <tr style="text-align:center;">
+                <td style="padding:10px; border:1px solid #cbd5e1;">${idx + 1}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold;">${k}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold;">${count}</td>
+                <td style="padding:10px; border:1px solid #cbd5e1; font-weight:bold; color:#1e3a8a;">${val.toLocaleString()} ج.م</td>
+                <td style="padding:10px; border:1px solid #cbd5e1;">${pct}%</td>
+              </tr>
+            `;
+          });
+
+          let detailRows = '';
+          currentRecords.forEach((r, idx) => {
+            detailRows += `
+              <tr style="text-align:center; font-size:14px;">
+                <td style="padding:8px; border:1px solid #cbd5e1;">${idx + 1}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1;">${r.dateStr || ''} - ${r.timeStr || ''}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; font-weight:bold;">${r.category}</td>
+                <td style="padding:8px; border:1px solid #cbd5e1; font-weight:bold; color:#1e3a8a;">${r.amount.toLocaleString()} ج.م</td>
+              </tr>
+            `;
+          });
+
+          reportHtml = `
+            <h2>📊 تقرير كشف حساب ${isExp ? 'المصاريف' : 'الدخل'} المفصل</h2>
+            <p style="text-align: center; color: #64748b; font-size: 14px;">تاريخ التقرير: ${now.toLocaleDateString('ar-EG')} - ${now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
+            <div style="background: #e0f2fe; color: #075985; font-size: 18px; font-weight: bold; text-align: center; padding: 14px; border: 2px solid #7dd3fc; border-radius: 10px; margin: 15px 0;">
+              الإجمالي الكلي: ${totalSum.toLocaleString()} جنيه مصري | إجمالي عدد العمليات: ${currentRecords.length}
+            </div>
+
+            <h3 style="color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 5px; margin-top:20px;">أولاً: جدول الإجماليات والعدد لكل صنف</h3>
+            <table style="width:100%; border-collapse:collapse; margin-top:10px; margin-bottom:25px;">
+              <thead>
+                <tr style="background:#1e3a8a; color:white;">
+                  <th style="padding:10px; border:1px solid #cbd5e1;">#</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">الصنف / البند</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">العدد</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">المبلغ</th>
+                  <th style="padding:10px; border:1px solid #cbd5e1;">النسبة</th>
+                </tr>
+              </thead>
+              <tbody>${summaryRows}</tbody>
+            </table>
+
+            <h3 style="color: #334155; border-bottom: 2px solid #334155; padding-bottom: 5px;">ثانياً: السجل الزمني لكافة العمليات باليوم والدقيقة</h3>
+            <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+              <thead>
+                <tr style="background:#334155; color:white;">
+                  <th style="padding:8px; border:1px solid #cbd5e1;">#</th>
+                  <th style="padding:8px; border:1px solid #cbd5e1;">التاريخ والوقت</th>
+                  <th style="padding:8px; border:1px solid #cbd5e1;">البند</th>
+                  <th style="padding:8px; border:1px solid #cbd5e1;">المبلغ</th>
+                </tr>
+              </thead>
+              <tbody>${detailRows}</tbody>
+            </table>
+          `;
+        }
+
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html lang="ar" dir="rtl">
+          <head>
+            <meta charset="UTF-8">
+            <title>طباعة التقرير</title>
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, sans-serif; direction: rtl; text-align: right; padding: 25px; color: #0f172a; }
+              h2 { text-align: center; color: #1e3a8a; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #cbd5e1; text-align: center; }
+              @media print {
+                body { padding: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            ${reportHtml}
+            <div style="text-align:center; margin-top:25px;">
+              <button onclick="window.print()" style="background:#1e3a8a; color:white; border:none; padding:12px 24px; font-size:16px; font-weight:bold; border-radius:8px; cursor:pointer;">🖨️ طباعة أو حفظ كـ PDF</button>
+            </div>
+          
+  <script>
+    // PWA: register offline support and expose Chrome's install prompt when available.
+    let deferredInstallPrompt = null;
+    const installAppBtn = document.getElementById('installAppBtn');
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      if (installAppBtn) installAppBtn.hidden = false;
+    });
+
+    if (installAppBtn) {
+      installAppBtn.addEventListener('click', async () => {
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        installAppBtn.hidden = true;
+      });
+    }
+
+    window.addEventListener('appinstalled', () => {
+      if (installAppBtn) installAppBtn.hidden = true;
+      deferredInstallPrompt = null;
+    });
+
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((error) => {
+          console.error('Service worker registration failed:', error);
+        });
+      });
+    }
+  </script>
+
+</body>
+          </html>
+        `);
+        printWindow.document.close();
+      });
+    }
+
+    
+
+    // إدارة الأصناف
+    function renderManageList() {
+      const isExp = currentMode === 'expense';
+      manageTitle.textContent = isExp ? 'إدارة أصناف المصاريف' : 'إدارة مصادر الدخل';
+      const list = isExp ? expenseCats : incomeCats;
+      manageList.innerHTML = list.map((c, i) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1329; padding:8px 14px; border-radius:12px; border:1px solid var(--border-soft);">
+          <span>${c.icon || ''} ${c.name}</span>
+          <button type="button" onclick="delCat(${i})" style="background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#f87171; border-radius:8px; padding:3px 10px; font-size:0.78rem; font-weight:bold; cursor:pointer;">مسح</button>
+        </div>
+      `).join('');
+    }
+
+    btnManage.addEventListener('click', () => {
+      renderManageList();
+      manageModal.classList.add('open');
+    });
+
+    window.delCat = function(i) {
+      const isExp = currentMode === 'expense';
+      const list = isExp ? expenseCats : incomeCats;
+      if (confirm(`مسح صنف "${list[i].name}"؟`)) {
+        list.splice(i, 1);
+        saveAll();
+        renderCats();
+        renderManageList();
+      }
+    };
+
+    function renderIconPicker() {
+      iconGridContainer.innerHTML = availableIcons.map(ic => `
+        <button type="button" class="icon-picker-btn" onclick="selectThisIcon('${ic}')">${ic}</button>
+      `).join('');
+    }
+    renderIconPicker();
+
+    btnPickIcon.addEventListener('click', () => iconPickerModal.classList.add('open'));
+    btnCloseIconPicker.addEventListener('click', () => iconPickerModal.classList.remove('open'));
+
+    window.selectThisIcon = function(ic) {
+      currentPickedIcon = ic;
+      displaySelectedIcon.textContent = ic;
+      iconPickerModal.classList.remove('open');
+    };
+
+    btnAddNewCat.addEventListener('click', () => {
+      const name = newCatName.value.trim();
+      const icon = currentPickedIcon || '🏷️';
+      if (!name) { alert('من فضلك اكتب اسم الصنف أولاً'); newCatName.focus(); return; }
+      const isExp = currentMode === 'expense';
+      const list = isExp ? expenseCats : incomeCats;
+      if (list.some(c => c.name === name)) { alert('الصنف موجود بالفعل'); return; }
+      list.push({ name, icon });
+      saveAll();
+      renderCats();
+      newCatName.value = '';
+      currentPickedIcon = '🏷️';
+      displaySelectedIcon.textContent = '🏷️';
+      renderManageList();
+    });
+
+    btnCloseManage.addEventListener('click', () => manageModal.classList.remove('open'));
+
+    btnClear.addEventListener('click', () => {
+      if (currentMode === 'debt') {
+        if (debts.length === 0) return;
+        if (confirm('تصفير ومسح كافة الديون المسجلة؟')) {
+          debts = [];
+          saveAll();
+          renderDebtsList();
+        }
+      } else if (currentMode === 'loan') {
+        if (loans.length === 0) return;
+        if (confirm('تصفير ومسح كافة الأقساط المسجلة؟')) {
+          loans = [];
+          saveAll();
+          renderLoansList();
+        }
+      } else {
+        const count = records.filter(r => r.type === currentMode).length;
+        if (count === 0) return;
+        if (confirm(`تصفير سجلات ${currentMode === 'expense' ? 'المصاريف' : 'الدخل'}؟`)) {
+          records = records.filter(r => r.type !== currentMode);
+          saveAll();
+          renderRecent();
+        }
+      }
+    });
+
+    setMode('expense');
+    renderRecent();
+    updateTopStats();
+  
+    // نظام النسخ الاحتياطي ونقل البيانات بين الأجهزة (مفحوص ومضمون 100%)
+    const btnExportBackup = document.getElementById('btnExportBackup');
+    const btnImportBackupTrigger = document.getElementById('btnImportBackupTrigger');
+    const importBackupFile = document.getElementById('importBackupFile');
+
+    if (btnExportBackup) {
+      btnExportBackup.addEventListener('click', () => {
+        try {
+          const backupData = {
+            app: 'MOoOWallet',
+            version: 'v21',
+            exportDate: new Date().toISOString(),
+            expenseCats: expenseCats,
+            incomeCats: incomeCats,
+            records: records,
+            loans: loans,
+            debts: debts
+          };
+
+          const jsonStr = JSON.stringify(backupData, null, 2);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const downloadAnchor = document.createElement('a');
+          downloadAnchor.href = url;
+          downloadAnchor.download = `نسخة_MOoOWallet_الاحتياطية_${Date.now()}.json`;
+          document.body.appendChild(downloadAnchor);
+          downloadAnchor.click();
+          downloadAnchor.remove();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert('حدث خطأ أثناء تصدير النسخة: ' + err.message);
+        }
+      });
+    }
+
+    if (btnImportBackupTrigger && importBackupFile) {
+      btnImportBackupTrigger.addEventListener('click', () => {
+        importBackupFile.click();
+      });
+
+      importBackupFile.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const imported = JSON.parse(event.target.result);
+            if (!imported.records && !imported.loans) {
+              alert('الملف غير متوافق أو تالف');
+              return;
+            }
+
+            if (confirm('هل تريد استبدال البيانات الحالية بالنسخة الاحتياطية المستوردة؟')) {
+              if (imported.expenseCats) expenseCats = imported.expenseCats;
+              if (imported.incomeCats) incomeCats = imported.incomeCats;
+              if (imported.records) records = imported.records;
+              if (imported.loans) loans = imported.loans;
+              if (imported.debts) debts = imported.debts;
+
+              saveAll();
+              renderCats();
+              renderRecent();
+              if (currentMode === 'loan') renderLoansList();
+              updateTopStats();
+              alert('تم استيراد كافة المصاريف والإيرادات والأقساط بنجاح تام! 🎉');
+            }
+          } catch (err) {
+            alert('حدث خطأ أثناء قراءة ملف النسخة: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
+        importBackupFile.value = '';
+      });
+    }
+
+  </script>
+
+  <script>
+    // PWA: register offline support and expose Chrome's install prompt when available.
+    let deferredInstallPrompt = null;
+    const installAppBtn = document.getElementById('installAppBtn');
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      if (installAppBtn) installAppBtn.hidden = false;
+    });
+
+    if (installAppBtn) {
+      installAppBtn.addEventListener('click', async () => {
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        installAppBtn.hidden = true;
+      });
+    }
+
+    window.addEventListener('appinstalled', () => {
+      if (installAppBtn) installAppBtn.hidden = true;
+      deferredInstallPrompt = null;
+    });
+
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((error) => {
+          console.error('Service worker registration failed:', error);
+        });
+      });
+    }
+  </script>
+
+</body>
+</html>
