@@ -1,1 +1,1 @@
-# MOoO-wallet-
+# MOoO-wallet
